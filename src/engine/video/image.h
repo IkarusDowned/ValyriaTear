@@ -293,14 +293,15 @@ protected:
     void _RemoveTextureReference();
 
     /** \brief A draw helper function which adjusts the draw orientation (translation and scaling)
-    ***
+    *** \param offset_x allows for an offset to be applied to the draw location in the x orientation
+    *** \param offset_y allows for an offset to be applied to the draw location in the y orientation
     *** \note This method modifies the draw cursor position and does not restore it before finishing. Therefore
     *** under most circumstances, you will want to call VideoManager->PushState()/PopState(), or
     *** glPushMatrix()/glPopMatrix() before and after calling this function. The latter is preferred due to the
     *** lower cost of the call, but some circumstances may require using the former when more state information
     *** needs to be retained.
     **/
-    void _DrawOrientation() const;
+    void _DrawOrientation(uint32 offset_x = 0, uint32 offset_y = 0) const;
 
     /** \brief Draws the OpenGL texture referred to by the object on the screen
     *** \param draw_color A non-NULL pointer to an array of four valid Color objects
@@ -386,12 +387,34 @@ public:
     }
 
     //! \brief Draws the image to the screen
-    void Draw() const;
+    void Draw() const
+    {
+        this->Draw(0, 0);
+    }
+
+    //! \brief Draws the image to the screen
+    //! \param offset_x is the optional x offset for the image
+    //! \param offset_y is the optional y offset for the image
+    //! \note x and y offsets are mostly used by animated sprites. They allow for the collision
+    //!  grid to be offset from the image during runtime, reducing the cost for the artists
+    void Draw(uint32 offset_x, uint32 offset_y) const;
 
     /** \brief Draws a color-modulated version of the image
     *** \param draw_color The color to modulate the image by
     **/
-    void Draw(const Color &draw_color) const;
+    void Draw(const Color &draw_color) const
+    {
+        this->Draw(draw_color, 0, 0);
+    }
+
+    /** \brief Draws a color-modulated version of the image
+    *** \param draw_color The color to modulate the image by
+    *** \param offset_x is the optional x offset for the image
+    *** \param offset_y is the optional y offset for the image
+    *** \note x and y offsets are mostly used by animated sprites. They allow for the collision
+    ***  grid to be offset from the image during runtime, reducing the cost for the artists
+    **/
+    void Draw(const Color &draw_color, uint32 offset_x, uint32 offset_y) const;
 
     /** \brief Saves the image to a file
     *** \param filename The filename of the image to save (should have a .png or .jpg extension)
@@ -491,6 +514,12 @@ class AnimationFrame
 public:
     //! \brief The amount of time to display this frame, in milliseconds
     uint32 frame_time;
+
+    //! \brief the x offset to display this frame, from the "origin point"
+    uint32 frame_offset_x;
+
+    //! \brief the y offset to display this frame, from the "origin point"
+    uint32 frame_offset_y;
 
     //! \brief The StillImage used for this frame in the animation
     StillImage image;
@@ -642,6 +671,8 @@ public:
     /** \brief Adds an animation frame using the filename of the image to add.
     *** \param frame The filename of the frame image to add.
     *** \param frame_time The number of milliseconds that this animation should last for
+    *** \param frame_offset_x is the rendering x offset for the image from the grid position
+    *** \param frame_offset_y is the rendering y offset for the image from the grid position
     *** \return True on success, false on failure.
     ***
     *** This is perhaps a more convenient way to add frames, <b>but</b> this makes it impossible
@@ -650,17 +681,19 @@ public:
     *** you always will want. For example, if your coordinate system is in terms of 32x32 pixel
     *** tiles, then a tile image would have a width and height of 1, not 32.
     **/
-    bool AddFrame(const std::string &frame, uint32 frame_time);
+    bool AddFrame(const std::string &frame, uint32 frame_time, uint32 frame_offset_x = 0, uint32 frame_offset_y = 0);
 
     /** \brief Adds an animation frame by using an existing static image.
     *** \param frame The still image to use as the frame image.
     *** \param frame_time The amount of millseconds to display the frame.
+    *** \param frame_offset_x is the rendering x offset for the image from the grid position
+    *** \param frame_offset_y is the rendering y offset for the image from the grid position
     *** \return True on success, false on failure.
     ***
     *** The frame argument should have at least one element prepared. Passing a StillImage
     *** that does not contain any image data will result in failure for this call.
     **/
-    bool AddFrame(const StillImage &frame, uint32 frame_time);
+    bool AddFrame(const StillImage &frame, uint32 frame_time, uint32 frame_offset_x = 0, uint32 frame_offset_y = 0);
 
     //! \name Class Member Access Functions
     //@{

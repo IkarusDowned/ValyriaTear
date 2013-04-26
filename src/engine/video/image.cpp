@@ -496,14 +496,15 @@ void ImageDescriptor::_RemoveTextureReference()
 
 
 
-void ImageDescriptor::_DrawOrientation() const
+void ImageDescriptor::_DrawOrientation(uint32 offset_x, uint32 offset_y) const
 {
     Context &current_context = VideoManager->_current_context;
 
     // Fix the image offset according to the current context alignement.
     // Takes the image width/height and divides it by 2 (equal to * 0.5f) and applies the offset (left, right, center/top, bottom, center).
-    float x_align_offset = ((current_context.x_align + 1) * _width) * 0.5f * -current_context.coordinate_system.GetHorizontalDirection();
-    float y_align_offset = ((current_context.y_align + 1) * _height) * 0.5f * -current_context.coordinate_system.GetVerticalDirection();
+    // Then it adds the offset provided as optional arguments
+    float x_align_offset = ((current_context.x_align + 1) * _width) * 0.5f * -current_context.coordinate_system.GetHorizontalDirection() + (float) offset_x;
+    float y_align_offset = ((current_context.y_align + 1) * _height) * 0.5f * -current_context.coordinate_system.GetVerticalDirection() + (float) offset_y;
 
     VideoManager->MoveRelative(x_align_offset, y_align_offset);
 
@@ -1016,21 +1017,21 @@ bool StillImage::Load(const std::string &filename)
 
 
 
-void StillImage::Draw() const
+void StillImage::Draw(uint32 offset_x, uint32 offset_y) const
 {
-    Draw(Color::white);
+    Draw(Color::white, offset_x, offset_y);
 }
 
 
 
-void StillImage::Draw(const Color &draw_color) const
+void StillImage::Draw(const Color &draw_color, uint32 offset_x, uint32 offset_y) const
 {
     // Don't draw anything if this image is completely transparent (invisible)
     if(IsFloatEqual(draw_color[3], 0.0f))
         return;
 
     glPushMatrix();
-    _DrawOrientation();
+    _DrawOrientation(offset_x, offset_y);
 
 
     // Used to determine if the image color should be modulated by any degree due to screen fading effects
@@ -1270,6 +1271,9 @@ bool AnimatedImage::LoadFromAnimationScript(const std::string &filename)
 
     std::vector<uint32> frames_ids;
     std::vector<uint32> frames_duration;
+    std::vector<uint32> frames_offset_x;
+    std::vector<uint32> frames_offset_y;
+
 
     image_script.OpenTable("frames");
     uint32 num_frames = image_script.GetTableSize();
@@ -1278,6 +1282,8 @@ bool AnimatedImage::LoadFromAnimationScript(const std::string &filename)
 
         int32 frame_id = image_script.ReadInt("id");
         int32 frame_duration = image_script.ReadInt("duration");
+        int32 frame_offset_x = image_script.ReadInt("offset_x");
+        int32 frame_offset_y = image_script.ReadInt("offset_y");
 
         if(frame_id < 0 || frame_duration < 0 || frame_id >= (int32)image_frames.size()) {
             PRINT_WARNING << "Invalid frame (" << frames_table_id << ") in file: "
@@ -1287,8 +1293,16 @@ bool AnimatedImage::LoadFromAnimationScript(const std::string &filename)
             continue;
         }
 
+        //reset to a zero offset if not specified in the script
+        if(frame_offset_x < 0)
+            frame_offset_x = 0;
+        if(frame_offset_y < 0)
+            frame_offset_y = 0;
+
         frames_ids.push_back((uint32)frame_id);
         frames_duration.push_back((uint32)frame_duration);
+        frames_offset_x.push_back((uint32) frame_offset_x);
+        frames_offset_y.push_back((uint32) frame_offset_y);
 
         image_script.CloseTable(); // frames[frame_table_id] table
     }
@@ -1303,7 +1317,7 @@ bool AnimatedImage::LoadFromAnimationScript(const std::string &filename)
     for(uint32 i = 0; i < frames_ids.size(); ++i) {
         // Set the dimension of the requested frame
         image_frames[frames_ids[i]].SetDimensions(_width, _height);
-        AddFrame(image_frames[frames_ids[i]], frames_duration[i]);
+        AddFrame(image_frames[frames_ids[i]], frames_duration[i], frames_offset_x[i], frames_offset_y[i]);
         if(frames_duration[i] == 0) {
             PRINT_WARNING << "Added a frame time value of zero when loading file: " << filename << std::endl;
         }
@@ -1404,7 +1418,10 @@ void AnimatedImage::Draw() const
         return;
     }
 
-    _frames[_frame_index].image.Draw();
+    uint32 frame_offset_x =_frames[_frame_index].frame_offset_x;
+    uint32 frame_offset_y =_frames[_frame_index].frame_offset_y;
+
+    _frames[_frame_index].image.Draw(frame_offset_x, frame_offset_y);
 }
 
 
@@ -1416,7 +1433,10 @@ void AnimatedImage::Draw(const Color &draw_color) const
         return;
     }
 
-    _frames[_frame_index].image.Draw(draw_color);
+    uint32 frame_offset_x =_frames[_frame_index].frame_offset_x;
+    uint32 frame_offset_y =_frames[_frame_index].frame_offset_y;
+
+    _frames[_frame_index].image.Draw(draw_color, frame_offset_x, frame_offset_y);
 }
 
 
@@ -1497,7 +1517,7 @@ void AnimatedImage::Update(uint32 elapsed_time)
     }
 } // void AnimatedImage::Update()
 
-bool AnimatedImage::AddFrame(const std::string &frame, uint32 frame_time)
+bool AnimatedImage::AddFrame(const std::string &frame, uint32 frame_time, uint32 frame_offset_x, uint32 frame_offset_y)
 {
     StillImage img;
     img.SetStatic(_is_static);
@@ -1514,13 +1534,15 @@ bool AnimatedImage::AddFrame(const std::string &frame, uint32 frame_time)
 
     AnimationFrame new_frame;
     new_frame.frame_time = frame_time;
+    new_frame.frame_offset_x = frame_offset_x;
+    new_frame.frame_offset_y = frame_offset_y;
     new_frame.image = img;
     _frames.push_back(new_frame);
     _animation_time += frame_time;
     return true;
 }
 
-bool AnimatedImage::AddFrame(const StillImage &frame, uint32 frame_time)
+bool AnimatedImage::AddFrame(const StillImage &frame, uint32 frame_time, uint32 frame_offset_x, uint32 frame_offset_y)
 {
     if(!frame._image_texture) {
         PRINT_WARNING << "The StillImage argument did not contain any image elements" << std::endl;
@@ -1535,6 +1557,8 @@ bool AnimatedImage::AddFrame(const StillImage &frame, uint32 frame_time)
     AnimationFrame new_frame;
     new_frame.image = frame;
     new_frame.frame_time = frame_time;
+    new_frame.frame_offset_x = frame_offset_x;
+    new_frame.frame_offset_y = frame_offset_y;
 
     _frames.push_back(new_frame);
     _animation_time += frame_time;
